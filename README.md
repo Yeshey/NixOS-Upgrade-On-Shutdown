@@ -8,7 +8,7 @@ It only supports flakes, and is expected to be used with a remote repository tha
 
 By default, it waits `40` seconds to see if the user will leave the computer/Laptop connected to AC. This is configurable. If you want it to only activate when connected to AC, you can set `minimumBatteryToProceedWithoutAC` to something higher than `100`.
 
-## Installation
+## Installation & Usage
 
 ### Option A — plain `nixosModules` (recommended for most setups)
 
@@ -62,20 +62,6 @@ system.autoUpgradeOnShutdown = {
       # to include in your nixosConfigurations.
     };
 }
-```
-
-## Usage
-
-Example Usage:
-
-```nix
-  system.autoUpgradeOnShutdown = {
-    enable = true;
-    flake = "github:yeshey/nixos-config";
-    host = config.networking.hostName;
-    dates  = "*-*-01,16 06:10:00";
-    extraKeepAliveServices = [ "autossh-reverseProxy.service" ]; # service that is kept during the upgrade process on shutdown
-  };
 ```
 
 ## Options
