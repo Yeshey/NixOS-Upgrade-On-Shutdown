@@ -1,6 +1,6 @@
 # nixos-upgrade-on-shutdown
 
-NixOS on desktop by default can significantly slow down the computer on bigger rebuilds [[1](https://github.com/NixOS/nixpkgs/issues/198668)]. This means that the computer can get really slow if the default `system.autoUpgrade` quicks in when the user is using the PC.
+NixOS on desktop by default can significantly slow down the computer on bigger rebuilds [[1](https://github.com/NixOS/nixpkgs/issues/198668)]. This means that the computer can get really slow if the default `system.autoUpgrade` kicks in when the user is using the PC.
 
 This module makes the upgrade run on Shutdown, not on Reboots, Suspends, etc. If an upgrade is queued, and a Reboot is issued, it will leave a flag at `/etc/nixos-reboot-update.flag` so it is queued again when it boots back up.
 
