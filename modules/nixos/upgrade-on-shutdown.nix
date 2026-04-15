@@ -6,6 +6,7 @@
 }:
 let
   cfg = config.system.autoUpgradeOnShutdown;
+  serviceDescription = "NixOS Upgrade on Shutdown";
 
   # Send a desktop notification to every logged-in GUI user.
   # https://github.com/tonywalker1/notify-send-all (MIT License)
@@ -55,11 +56,11 @@ let
   # to restart services, which would fail mid-shutdown.
   updateScript = pkgs.writeShellScriptBin "nixos-update-flake" ''
     set -e
-    echo "Building system closure from ${cfg.flake}#nixosConfigurations.$HOST..."
+    echo "Building system closure from ${cfg.flake}#nixosConfigurations.${cfg.host}..."
 
     # 1. Build and get the store path
     OUT_PATH=$(${pkgs.nix}/bin/nix build \
-      "${cfg.flake}#nixosConfigurations.$HOST.config.system.build.toplevel" \
+      "${cfg.flake}#nixosConfigurations.${cfg.host}.config.system.build.toplevel" \
       --print-out-paths --no-link --refresh \
       ${lib.escapeShellArgs cfg.flags})
 
@@ -256,6 +257,16 @@ in
       '';
     };
 
+    host = lib.mkOption {
+      type = lib.types.str;
+      default = config.networking.hostName;
+      example = "my-laptop";
+      description = ''
+        The attribute name under `nixosConfigurations` in your flake.
+        Defaults to the system's networking hostname.
+      '';
+    };
+
   };
 
   config = lib.mkIf cfg.enable {
@@ -282,7 +293,7 @@ in
 
     # ── Main service ───────────────────────────────────────────────────────
     systemd.services.nixos-upgrade-on-shutdown = {
-      description      = "NixOS Upgrade on Shutdown";
+      description      = serviceDescription;
       restartIfChanged = false;
 
       unitConfig = {
@@ -328,7 +339,6 @@ in
       # the boot-time check service re-arms the update for the next shutdown.
       preStop = ''
           FLAG_FILE="/etc/nixos-reboot-update.flag"
-          HOST="$(${pkgs.inetutils}/bin/hostname)"
 
           if ! systemctl list-jobs | grep -Eq 'poweroff.target.*start'; then
             echo "Not powering off (reboot or other). Creating flag to update after next boot."
@@ -356,7 +366,7 @@ in
             else
               echo "Battery level too low (''${LEVEL}%)."
               for i in $(seq ${toString cfg.secondsToWaitBeforeCheckingAC} -1 1); do
-                echo -ne "\rWaiting ''${i} seconds to check if power is left connected/disconnected... " > /dev/console
+                echo -ne "\r [${serviceDescription}] Waiting ''${i} seconds to check if power is left connected/disconnected... " > /dev/console
                 sleep 1
               done
 
@@ -376,7 +386,7 @@ in
             fi
 
             if [ "$PROCEED" -eq 1 ]; then
-              if HOST="$HOST" ${updateScript}/bin/nixos-update-flake; then
+              if ${updateScript}/bin/nixos-update-flake; then
                 echo "Update finished successfully."
                 rm -f "$FLAG_FILE"
               else
