@@ -403,7 +403,7 @@ in
     # If the system rebooted before a scheduled power-off update could run,
     # this service finds the flag and re-arms the update service so it waits
     # for the next shutdown.
-    systemd.services.nixos-reboot-update-check = {
+    systemd.services.nixos-reboot-upgrade-check = {
       description = "Check for deferred upgrade flag from last reboot";
       wantedBy    = [ "multi-user.target" ];
       after = [ "network.target" "nixos-upgrade-on-shutdown.timer" ];
