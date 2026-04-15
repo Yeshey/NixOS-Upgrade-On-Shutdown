@@ -58,8 +58,8 @@ let
     set -e
     echo "Building system closure from ${cfg.flake}#nixosConfigurations.${cfg.host}..."
 
-    # 1. Build and get the store path
-    OUT_PATH=$(${pkgs.nix}/bin/nix build \
+    # 1. Build and get the store path using nix-output-monitor
+    OUT_PATH=$(${pkgs.nix-output-monitor}/bin/nom build \
       "${cfg.flake}#nixosConfigurations.${cfg.host}.config.system.build.toplevel" \
       --print-out-paths --no-link --refresh \
       ${lib.escapeShellArgs cfg.flags})
@@ -134,6 +134,16 @@ in
         inside a user home directory is discouraged — file-ownership and
         permission issues are likely when root writes into a
         user-owned directory.
+      '';
+    };
+
+    host = lib.mkOption {
+      type = lib.types.str;
+      default = config.networking.hostName;
+      example = "my-laptop";
+      description = ''
+        The attribute name under `nixosConfigurations` in your flake.
+        Defaults to the system's networking hostname.
       '';
     };
 
@@ -257,16 +267,6 @@ in
       '';
     };
 
-    host = lib.mkOption {
-      type = lib.types.str;
-      default = config.networking.hostName;
-      example = "my-laptop";
-      description = ''
-        The attribute name under `nixosConfigurations` in your flake.
-        Defaults to the system's networking hostname.
-      '';
-    };
-
   };
 
   config = lib.mkIf cfg.enable {
@@ -275,7 +275,7 @@ in
     # the shutdown service handles upgrades.
     system.autoUpgrade.enable = lib.mkForce false;
 
-    environment.systemPackages = with pkgs; [ libnotify notify-send-all ];
+    environment.systemPackages = with pkgs; [ libnotify notify-send-all nix-output-monitor ];
 
     # ── Timer ──────────────────────────────────────────────────────────────
     # Fires on the configured schedule. Its job is to arm the service so the
@@ -323,6 +323,7 @@ in
         xz.bin
         gzip
         gitMinimal
+        nix-output-monitor
         config.nix.package.out
       ];
 
