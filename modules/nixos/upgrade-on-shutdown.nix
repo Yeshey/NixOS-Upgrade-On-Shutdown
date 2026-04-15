@@ -7,6 +7,9 @@
 let
   cfg = config.system.autoUpgradeOnShutdown;
   serviceDescription = "NixOS Upgrade on Shutdown";
+  buildBin = if cfg.useNom 
+    then "${pkgs.nix-output-monitor}/bin/nom" 
+    else "${pkgs.nix}/bin/nix";
 
   # Send a desktop notification to every logged-in GUI user.
   # https://github.com/tonywalker1/notify-send-all (MIT License)
@@ -59,7 +62,7 @@ let
     echo "Building system closure from ${cfg.flake}#nixosConfigurations.${cfg.host}..."
 
     # 1. Build and get the store path using nix-output-monitor
-    OUT_PATH=$(${pkgs.nix-output-monitor}/bin/nom build \
+    OUT_PATH=$(${buildBin} build \
       "${cfg.flake}#nixosConfigurations.${cfg.host}.config.system.build.toplevel" \
       --print-out-paths --no-link --refresh \
       ${lib.escapeShellArgs cfg.flags})
@@ -265,6 +268,12 @@ in
         add any site-specific services that must still be running before/during the update. For example a VPN daemon needed to reach a private Nix cache, or a
         custom pre-shutdown hook.
       '';
+    };
+
+    options.useNom = lib.mkOption {
+      type = lib.types.bool;
+      default = true;
+      description = "Whether to use nix-output-monitor (nom) for builds to provide a more detailed UI.";
     };
 
   };
