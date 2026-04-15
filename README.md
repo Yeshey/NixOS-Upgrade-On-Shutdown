@@ -44,6 +44,7 @@ Then enable it in your NixOS configuration:
 system.autoUpgradeOnShutdown = {
   enable = true;
   flake  = "github:youruser/nixos-config";
+  host = "yourhost";
 };
 ```
 
