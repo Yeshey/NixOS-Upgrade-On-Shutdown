@@ -270,7 +270,7 @@ in
       '';
     };
 
-    options.useNom = lib.mkOption {
+    useNom = lib.mkOption {
       type = lib.types.bool;
       default = true;
       description = "Whether to use nix-output-monitor (nom) for builds to provide a more detailed UI.";
