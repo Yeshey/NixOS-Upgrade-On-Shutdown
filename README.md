@@ -43,7 +43,7 @@ Then enable it in your NixOS configuration:
 ```nix
 system.autoUpgradeOnShutdown = {
   enable = true;
-  flake  = "github:youruser/nixos-config";
+  flake  = "github:youruser/yourRepoName";
   host = "yourhost";
 };
 ```
