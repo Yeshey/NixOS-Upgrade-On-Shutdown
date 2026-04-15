@@ -225,6 +225,8 @@ All options live under `system.autoUpgradeOnShutdown`.
 | `minimumBatteryToProceedWithoutAC` | int | `85` | Battery % threshold below which the update waits to see if AC is connected before proceeding. Ignored on desktops (no battery). |
 | `secondsToWaitBeforeCheckingAC` | int | `40` | Seconds to wait on low battery before re-checking the AC adapter state. |
 | `jobTimeoutSec` | str | `"10h"` | Maximum time for the build + bootloader install (`TimeoutStopSec` on the service, `JobTimeoutSec` on the poweroff target). |
+| `extraKeepAliveServices` | list of str | `[]` | Additional systemd units appended to the built-in `After=` list, they'll be kept running during the upgrade process on shutdown. Useful for VPN daemons or other services that must be up during the upgrade. Duplicates of built-in entries are silently ignored. This already includes entries like `sshd.service`, `thermald.service`, `network-online.target`, etc. |
+
 
 ## How it works
 

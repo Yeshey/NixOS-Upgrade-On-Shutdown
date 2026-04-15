@@ -85,6 +85,23 @@ let
       exit 1
     fi
   '';
+
+  # Base set of services the update service must wait for (and that must
+  # remain alive) during the shutdown sequence.
+  baseAfterServices = [
+    "network-online.target"
+    "nss-lookup.target"
+    "nix-daemon.service"
+    "systemd-user-sessions.service"
+    "plymouth-quit-wait.service"
+    "thermald.service"
+    "systemd-oomd.service"
+    "systemd-timesyncd.service"
+    "systemd-resolved.service"
+    "dbus.service"
+    "sshd.service"
+    "local-fs.target"
+  ];
 in
 {
   options.system.autoUpgradeOnShutdown = {
@@ -224,6 +241,21 @@ in
       '';
     };
 
+    extraKeepAliveServices = lib.mkOption {
+      type = lib.types.listOf lib.types.str;
+      default = [ ];
+      example = [ "tailscaled.service" "mullvad-daemon.service" ];
+      description = ''
+        Additional systemd units to append to the `After=` ordering
+        constraint of the update service, beyond the built-in defaults.
+
+        The built-in list already includes the most common networking,
+        name-resolution, and session-management units. Use this option to
+        add any site-specific services that must still be running before/during the update. For example a VPN daemon needed to reach a private Nix cache, or a
+        custom pre-shutdown hook.
+      '';
+    };
+
   };
 
   config = lib.mkIf cfg.enable {
@@ -264,22 +296,7 @@ in
       conflicts = [ "reboot.target" "shutdown.target" ];
       before    = [ "shutdown.target" ];
 
-      after = [
-        "network-online.target"
-        "nss-lookup.target"
-        "nix-daemon.service"
-        "systemd-user-sessions.service"
-        "plymouth-quit-wait.service"
-        "thermald.service"
-        "systemd-oomd.service"
-        "systemd-timesyncd.service"
-        "systemd-resolved.service"
-        "dbus.service"
-        "autossh-reverseProxy.service"
-        "sshd.service"
-        "local-fs.target"
-        "fix-surface-clock.service"
-      ];
+      after = lib.lists.unique (baseAfterServices ++ cfg.extraKeepAliveServices);
 
       wants = [ "network-online.target" ];
 
