@@ -92,7 +92,7 @@ All options live under `system.autoUpgradeOnShutdown`.
 ## Impermanence
 
 If you use [impermanence](https://github.com/nix-community/impermanence) to
-wipe `/` on every boot, the flag file that tracks deferred updates
+wipe `/` on every boot, the flag file that tracks deferred updates accross reboots
 (`/etc/nixos-reboot-update.flag`) will be lost. You need to persist it
 yourself:
 
