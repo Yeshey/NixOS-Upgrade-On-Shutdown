@@ -23,7 +23,7 @@ By default it uses [nix-output-monitor](https://github.com/maralorn/nix-output-m
 {
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
-    upgrade-on-shutdown.url = "github:youruser/nixos-upgrade-on-shutdown";
+    upgrade-on-shutdown.url = "github:yeshey/nixos-upgrade-on-shutdown";
   };
 
   outputs = { nixpkgs, upgrade-on-shutdown, ... }: {
@@ -56,7 +56,7 @@ system.autoUpgradeOnShutdown = {
   inputs = {
     nixpkgs.url     = "github:NixOS/nixpkgs/nixos-unstable";
     flake-parts.url = "github:hercules-ci/flake-parts";
-    upgrade-on-shutdown.url = "github:youruser/nixos-upgrade-on-shutdown";
+    upgrade-on-shutdown.url = "github:yeshey/nixos-upgrade-on-shutdown";
   };
 
   outputs = inputs@{ flake-parts, upgrade-on-shutdown, ... }:
