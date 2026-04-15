@@ -29,7 +29,7 @@ The typical workflow this module is designed for:
 Below is an example workflow that updates `flake.lock` on the 1st and 16th
 of each month at 06:00 UTC — 10 minutes before the module's default timer.
 It tries a full update first, falls back to updating only `nixpkgs` inputs
-if `nix flake check` fails.
+if `nix flake check` fails. (You can see an example being used in a config [here](https://github.com/Yeshey/nixOS-Config/blob/main/.github/workflows/update-flake.yml))
 
 ```yaml
 # .github/workflows/update-flake.yml

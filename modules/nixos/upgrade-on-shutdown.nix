@@ -282,7 +282,7 @@ in
 
     # ── Main service ───────────────────────────────────────────────────────
     systemd.services.nixos-upgrade-on-shutdown = {
-      description      = "NixOS Update on Shutdown";
+      description      = "NixOS Upgrade on Shutdown";
       restartIfChanged = false;
 
       unitConfig = {
