@@ -1,5 +1,7 @@
 # nixos-upgrade-on-shutdown
 
+![WhatsApp Image 2026-04-15 at 03 52 20](https://github.com/user-attachments/assets/cf7e452b-b39d-4de3-b69a-531919b84588)
+
 NixOS on desktop by default can significantly slow down the computer on bigger rebuilds [[1](https://github.com/NixOS/nixpkgs/issues/198668)]. This means that the computer can get really slow if the default `system.autoUpgrade` kicks in when the user is using the PC.
 
 This module makes the upgrade run on Shutdown, not on Reboots, Suspends, etc. If an upgrade is queued, and a Reboot is issued, it will leave a flag at `/etc/nixos-reboot-update.flag` so it is queued again when it boots back up.
@@ -7,6 +9,10 @@ This module makes the upgrade run on Shutdown, not on Reboots, Suspends, etc. If
 It only supports flakes, and is expected to be used with a remote repository that updates itself (through for example GitHub actions.) See [GitHub Actions](#github-actions) for more details.
 
 By default, it waits `40` seconds to see if the user will leave the computer/Laptop connected to AC. This is configurable. If you want it to only activate when connected to AC, you can set `minimumBatteryToProceedWithoutAC` to something higher than `100`.
+
+By default it uses [nix-output-monitor](https://github.com/maralorn/nix-output-monitor):
+
+![gif4](https://github.com/user-attachments/assets/21d0fc8f-8101-45e7-858f-db6b7b0304a9)
 
 ## Installation & Usage
 
