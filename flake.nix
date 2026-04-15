@@ -15,7 +15,7 @@
           import ./modules/nixos/upgrade-on-shutdown.nix;
 
         flakeModules.default = { ... }: {
-          flake.nixosModules.upgrade-on-shutdown =
+          flake.modules.nixos.upgrade-on-shutdown =
             import ./modules/nixos/upgrade-on-shutdown.nix;
         };
       };
