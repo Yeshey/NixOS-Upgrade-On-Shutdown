@@ -6,7 +6,7 @@ NixOS' [default upgrade module](https://github.com/NixOS/nixpkgs/blob/nixos-unst
 
 This module makes the upgrade run on Shutdown, not on Reboots or Suspends, etc. If an upgrade is queued, and a Reboot is issued, it will leave a flag at `/etc/nixos-reboot-update.flag` so it is queued again when it boots back up.
 
-It only supports flakes, and is expected to be used with a remote repository that updates itself (through for example GitHub actions.) See [GitHub Actions](#github-actions) for more details.
+It only supports flakes, and is expected to be used with a remote repository that updates itself (through for example GitHub actions.). This module doesn't run `nix flake update` itself. See the [GitHub Actions Section](#github-actions) for more details.
 
 By default, it waits `40` seconds to see if the user will leave the computer/Laptop connected to AC. This is configurable. If you want it to only activate when connected to AC, you can set `minimumBatteryToProceedWithoutAC` to something higher than `100`.
 
