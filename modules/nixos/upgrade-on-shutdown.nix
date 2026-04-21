@@ -105,6 +105,9 @@ let
     "dbus.service"
     "sshd.service"
     "local-fs.target"
+    "nscd.service"
+    "avahi-daemon.service"
+    "NetworkManager.service"
   ];
 in
 {
