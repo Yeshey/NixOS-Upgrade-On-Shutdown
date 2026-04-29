@@ -94,7 +94,6 @@ let
   # remain alive) during the shutdown sequence.
   baseAfterServices = [
     "network-online.target"
-    "nss-lookup.target"
     "nix-daemon.service"
     "systemd-user-sessions.service"
     "plymouth-quit-wait.service"
@@ -102,12 +101,22 @@ let
     "systemd-oomd.service"
     "systemd-timesyncd.service"
     "systemd-resolved.service"
+    "systemd-journald.service"
+    "nss-lookup.target"
     "dbus.service"
+    "dbus.socket"
     "sshd.service"
     "local-fs.target"
-    "nscd.service"
     "avahi-daemon.service"
+    "avahi-daemon.socket"
     "NetworkManager.service"
+    "wpa_supplicant.service"
+    "remote-fs.target"
+    "cryptsetup.target"
+    "tlp.service"
+    "power-profiles-daemon.service"
+    "acpid.service"
+    "upower.service"
   ];
 in
 {
@@ -294,6 +303,7 @@ in
     # notification fires and the service waits for the next power-off.
     systemd.timers.nixos-upgrade-on-shutdown = {
       wantedBy = [ "timers.target" ];
+      after = [ "time-sync.target" "network.target" ];
       timerConfig = {
         Persistent         = cfg.persistent;
         OnCalendar         = cfg.dates;
@@ -429,7 +439,7 @@ in
     systemd.services.nixos-reboot-upgrade-check = {
       description = "Check for deferred upgrade flag from last reboot";
       wantedBy    = [ "multi-user.target" ];
-      after = [ "network.target" "nixos-upgrade-on-shutdown.timer" ];
+      after = [ "network.target" "nixos-upgrade-on-shutdown.timer" "time-sync.target" ];
 
       script = ''
         FLAG_FILE="/etc/nixos-reboot-update.flag"
