@@ -447,7 +447,7 @@ in
         if [ -f "$FLAG_FILE" ]; then
           if ! systemctl is-active --quiet nixos-upgrade-on-shutdown.service; then
             echo "Re-arming nixos-upgrade-on-shutdown.service"
-            systemctl start nixos-upgrade-on-shutdown.service
+            systemctl start --no-block nixos-upgrade-on-shutdown.service
           fi
           rm "$FLAG_FILE"
         fi

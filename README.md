@@ -78,7 +78,7 @@ All options live under `system.autoUpgradeOnShutdown`.
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | `enable` | bool | `false` | Enable the module. |
-| `flake` | str | *(required)* | Flake URI of the NixOS config to build, e.g. `github:youruser/nixos-config`. A remote URI is strongly recommended — see above. |
+| `flake` | str | *(required)* | Flake URI of the NixOS config to build, e.g. `github:youruser/nixos-config`. A remote URI is strongly recommended, see above. |
 | `flags` | list of str | `[]` | Extra flags forwarded to `nix build`. |
 | `useNom` | bool | `true` | Whether to use `nix-output-monitor` (`nom`) for build output. Provides a more detailed UI for the build process. |
 | `dates` | str | `*-*-01,16 06:10:00` | When to arm the update service. Accepts any `systemd.time(7)` calendar expression. |
