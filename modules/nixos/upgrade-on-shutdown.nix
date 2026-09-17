@@ -117,6 +117,9 @@ let
     "power-profiles-daemon.service"
     "acpid.service"
     "upower.service"
+    "systemd-logind.service"
+    "dbus-org.freedesktop.login1.service"
+    "polkit.service" 
   ];
 in
 {
