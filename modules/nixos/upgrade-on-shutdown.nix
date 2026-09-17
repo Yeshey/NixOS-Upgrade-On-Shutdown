@@ -120,6 +120,7 @@ let
     "systemd-logind.service"
     "dbus-org.freedesktop.login1.service"
     "polkit.service" 
+    "tailscaled.service"
   ];
 in
 {
