@@ -54,21 +54,100 @@ let
     exit 0
   '';
 
+  # Runs inside the user's graphical session (XDG autostart). Shows the
+  # notice the root service left in /run for this boot, if any.
+  noticeScript = pkgs.writeShellScriptBin "nixos-upgrade-notice" ''
+    f=/run/nixos-upgrade-notice
+    [ -r "$f" ] || exit 0
+    for i in $(${pkgs.coreutils}/bin/seq 1 15); do
+      ${pkgs.libnotify}/bin/notify-send -u critical "${serviceDescription}" "$(${pkgs.coreutils}/bin/cat "$f")" && exit 0
+      sleep 2
+    done
+  '';
+
   # Build the system closure, set the profile, and activate via
   # switch-to-configuration boot — updates the bootloader without trying
   # to restart services, which would fail mid-shutdown.
+  #
+  # Exit code 10 = aborted because of insufficient disk space.
   updateScript = pkgs.writeShellScriptBin "nixos-update-flake" ''
     set -e
     echo "Building system closure from ${cfg.flake}#nixosConfigurations.${cfg.host}..."
 
-    # 1. Build and get the store path using nix-output-monitor
-    OUT_PATH=$(${buildBin} build \
+    MIN_START_KB=${toString (cfg.minFreeBeforeBuildGiB * 1024 * 1024)}
+    MIN_ABORT_KB=${toString (cfg.minFreeDiskSpaceGiB * 1024 * 1024)}
+
+    free_kb() {
+      df --output=avail -k /nix/store 2>/dev/null | tail -n 1 | tr -d ' '
+    }
+
+    # Check free disk space on /nix/store before starting
+    FREE_KB=$(free_kb)
+    if [ -n "$FREE_KB" ] && [ "$FREE_KB" -lt "$MIN_START_KB" ]; then
+      echo "Insufficient disk space on /nix/store (< ${toString cfg.minFreeBeforeBuildGiB}GiB). Aborting upgrade." >&2
+      exit 10
+    fi
+
+    # 1. Build and get the store path using nix-output-monitor / nix build
+    # Temp files live in /run (tmpfs) so they work even when the root fs is full.
+    OUT_FILE=$(mktemp /run/nixos-upgrade-out.XXXXXX)
+    DISK_FLAG="/run/nixos-upgrade-disk-full"
+    rm -f "$DISK_FLAG"
+
+    # setsid: build gets its own process group so the whole tree can be killed.
+    # A wedged build is bounded by TimeoutStopSec / poweroff JobTimeoutSec;
+    # systemd kills the stop script and shutdown proceeds regardless.
+    ${pkgs.util-linux}/bin/setsid ${buildBin} build \
       "${cfg.flake}#nixosConfigurations.${cfg.host}.config.system.build.toplevel" \
       --print-out-paths --no-link --refresh \
-      ${lib.escapeShellArgs cfg.flags})
+      ${lib.escapeShellArgs cfg.flags} > "$OUT_FILE" &
+    BUILD_PID=$!
 
-    if [ -z "$OUT_PATH" ]; then
-      echo "Build failed! Aborting update."
+    # Watchdog: monitor free space on /nix/store while building
+    (
+      while true; do
+        sleep 3
+        CURR_FREE_KB=$(free_kb)
+        if [ -n "$CURR_FREE_KB" ] && [ "$CURR_FREE_KB" -lt "$MIN_ABORT_KB" ]; then
+          echo "Disk space critical (< ${toString cfg.minFreeDiskSpaceGiB}GiB on /nix/store). Aborting build!" >&2
+          touch "$DISK_FLAG"
+          kill -TERM -- "-$BUILD_PID" 2>/dev/null || true
+          sleep 2
+          kill -KILL -- "-$BUILD_PID" 2>/dev/null || true
+          break
+        fi
+      done
+    ) &
+    WATCHDOG_PID=$!
+
+    BUILD_EXIT=0
+    wait "$BUILD_PID" || BUILD_EXIT=$?
+    kill "$WATCHDOG_PID" 2>/dev/null || true
+    wait "$WATCHDOG_PID" 2>/dev/null || true
+
+    if [ -f "$DISK_FLAG" ]; then
+      rm -f "$DISK_FLAG" "$OUT_FILE"
+      echo "Build aborted due to low disk space." >&2
+      exit 10
+    fi
+
+    if [ "$BUILD_EXIT" -ne 0 ]; then
+      rm -f "$OUT_FILE"
+      # Build may have died from ENOSPC between watchdog polls.
+      FREE_KB=$(free_kb)
+      if [ -n "$FREE_KB" ] && [ "$FREE_KB" -lt "$MIN_START_KB" ]; then
+        echo "Build failed (exit $BUILD_EXIT) and disk space is low. Treating as out of space." >&2
+        exit 10
+      fi
+      echo "Build failed! Aborting update." >&2
+      exit "$BUILD_EXIT"
+    fi
+
+    OUT_PATH=$(tr -d '\r\n' < "$OUT_FILE")
+    rm -f "$OUT_FILE"
+
+    if [ -z "$OUT_PATH" ] || [ ! -e "$OUT_PATH" ]; then
+      echo "Build output path not found! Aborting update." >&2
       exit 1
     fi
 
@@ -267,6 +346,11 @@ in
         systemd waits for the stop hook to finish) and `JobTimeoutSec` on
         the poweroff target (how long the target itself may wait).
 
+        This is also the effective backstop for the build itself: when the
+        stop hook is killed on timeout, the build is orphaned, shutdown
+        proceeds, and the old generation boots. Lower this if a 10h
+        backstop is too long.
+
         The format is described in {manpage}`systemd.time(7)`.
       '';
     };
@@ -292,6 +376,34 @@ in
       description = "Whether to use nix-output-monitor (nom) for builds to provide a more detailed UI.";
     };
 
+    minFreeBeforeBuildGiB = lib.mkOption {
+      type = lib.types.int;
+      default = 8;
+      example = 20;
+      description = ''
+        Minimum free disk space (in GiB) required on `/nix/store` to start
+        the build. If less is available the build is skipped, shutdown
+        proceeds normally, and the user is notified on next boot that the
+        upgrade failed for lack of space and will be retried.
+
+        Should be comfortably larger than
+        {option}`system.autoUpgradeOnShutdown.minFreeDiskSpaceGiB`, since
+        a cold build can need many GiB.
+      '';
+    };
+
+    minFreeDiskSpaceGiB = lib.mkOption {
+      type = lib.types.int;
+      default = 2;
+      example = 5;
+      description = ''
+        Minimum free disk space (in GiB) tolerated on `/nix/store` while
+        the build runs. If free space drops below this threshold, the build
+        is killed to prevent hanging on a full disk during shutdown, and
+        the upgrade is retried on the next shutdown.
+      '';
+    };
+
   };
 
   config = lib.mkIf cfg.enable {
@@ -301,6 +413,16 @@ in
     system.autoUpgrade.enable = lib.mkForce false;
 
     environment.systemPackages = with pkgs; [ libnotify notify-send-all nix-output-monitor ];
+
+    # Shows the post-boot notice inside whatever desktop session the user
+    # logs into (any XDG-autostart-compliant DE/WM).
+    environment.etc."xdg/autostart/nixos-upgrade-notice.desktop".text = ''
+      [Desktop Entry]
+      Type=Application
+      Name=NixOS upgrade notice
+      NoDisplay=true
+      Exec=${noticeScript}/bin/nixos-upgrade-notice
+    '';
 
     # ── Timer ──────────────────────────────────────────────────────────────
     # Fires on the configured schedule. Its job is to arm the service so the
@@ -353,12 +475,28 @@ in
         config.nix.package.out
       ];
 
-      # ExecStart: runs when the timer fires.
-      # Waits 3 sec then notifies all desktop users that an update is staged.
+      # ExecStart: runs when the timer fires or when re-armed after reboot.
       script = ''
-        echo "Will notify in 3 seconds"
-        sleep 3
-        ${notify-send-all}/bin/notify-send-all -u critical "Will update on shutdown..."
+        FLAG_FILE="/etc/nixos-reboot-update.flag"
+
+        if [ -f "$FLAG_FILE" ]; then
+          # Just booted with a deferred upgrade. Leave a notice in /run; the
+          # XDG autostart entry shows it as soon as a desktop session exists.
+          REASON=$(cat "$FLAG_FILE" 2>/dev/null || true)
+          rm -f "$FLAG_FILE"
+
+          if [ "$REASON" = "disk-space" ]; then
+            echo "Previous upgrade failed: not enough disk space. Will retry on next shutdown." > /run/nixos-upgrade-notice
+          else
+            echo "Will update on shutdown..." > /run/nixos-upgrade-notice
+          fi
+          chmod 644 /run/nixos-upgrade-notice
+        else
+          # Timer fired mid-session: a session exists, notify directly.
+          echo "Will notify in 3 seconds"
+          sleep 3
+          ${notify-send-all}/bin/notify-send-all -u critical "Will update on shutdown..."
+        fi
       '';
 
       # ExecStop: runs during the shutdown sequence.
@@ -413,11 +551,19 @@ in
             fi
 
             if [ "$PROCEED" -eq 1 ]; then
-              if ${updateScript}/bin/nixos-update-flake; then
+              set +e
+              ${updateScript}/bin/nixos-update-flake
+              UPDATE_EXIT=$?
+              set -e
+
+              if [ "$UPDATE_EXIT" -eq 0 ]; then
                 echo "Update finished successfully."
                 rm -f "$FLAG_FILE"
+              elif [ "$UPDATE_EXIT" -eq 10 ]; then
+                echo "Update aborted: insufficient disk space. Flagging for retry on next shutdown."
+                echo "disk-space" > "$FLAG_FILE" || true
               else
-                echo "Update FAILED. System will boot into the old generation."
+                echo "Update FAILED (exit code $UPDATE_EXIT). System will boot into the old generation."
               fi
             fi
           fi
@@ -452,8 +598,9 @@ in
           if ! systemctl is-active --quiet nixos-upgrade-on-shutdown.service; then
             echo "Re-arming nixos-upgrade-on-shutdown.service"
             systemctl start --no-block nixos-upgrade-on-shutdown.service
+          else
+            rm -f "$FLAG_FILE"
           fi
-          rm "$FLAG_FILE"
         fi
       '';
 

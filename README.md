@@ -10,6 +10,12 @@ It only supports flakes, and is expected to be used with a remote repository tha
 
 By default, it waits `40` seconds to see if the user will leave the computer/Laptop connected to AC. This is configurable. If you want it to only activate when connected to AC, you can set `minimumBatteryToProceedWithoutAC` to something higher than `100`.
 
+Before building, the module checks free space on `/nix/store`. If there is less than `minFreeBeforeBuildGiB`, the build is skipped and shutdown proceeds normally. While building, a watchdog polls free space and kills the build if it drops below `minFreeDiskSpaceGiB`, so a full disk cannot keep the machine from powering off. In both cases the upgrade is queued again, and on the next boot a notification tells you the last attempt failed because of insufficient disk space and that it will be retried on the next shutdown.
+
+> **Note:** Only the filesystem holding `/nix/store` is checked. If `/boot` or another mount fills up, the update fails through the normal error path.
+
+The build is bounded by `jobTimeoutSec` (default `10h`). If a build wedges and hits that limit, systemd kills the stop hook, the build is orphaned, shutdown proceeds, and the machine boots into the old generation. Lower `jobTimeoutSec` if 10h is too long a backstop for you.
+
 By default it uses [nix-output-monitor](https://github.com/maralorn/nix-output-monitor):
 
 ![gif4](https://github.com/user-attachments/assets/21d0fc8f-8101-45e7-858f-db6b7b0304a9)
@@ -79,6 +85,7 @@ All options live under `system.autoUpgradeOnShutdown`.
 |--------|------|---------|-------------|
 | `enable` | bool | `false` | Enable the module. |
 | `flake` | str | *(required)* | Flake URI of the NixOS config to build, e.g. `github:youruser/nixos-config`. A remote URI is strongly recommended, see above. |
+| `host` | str | `config.networking.hostName` | Attribute name under `nixosConfigurations` to build. |
 | `flags` | list of str | `[]` | Extra flags forwarded to `nix build`. |
 | `useNom` | bool | `true` | Whether to use `nix-output-monitor` (`nom`) for build output. Provides a more detailed UI for the build process. |
 | `dates` | str | `*-*-01,16 06:10:00` | When to arm the update service. Accepts any `systemd.time(7)` calendar expression. |
@@ -87,15 +94,19 @@ All options live under `system.autoUpgradeOnShutdown`.
 | `fixedRandomDelay` | bool | `false` | Keep the random delay consistent across runs (reduces jitter spread). |
 | `minimumBatteryToProceedWithoutAC` | int | `85` | Battery % threshold below which the update waits to see if AC is connected before proceeding. Ignored on desktops (no battery). |
 | `secondsToWaitBeforeCheckingAC` | int | `40` | Seconds to wait on low battery before re-checking the AC adapter state. |
-| `jobTimeoutSec` | str | `"10h"` | Maximum time for the update before killing it. This also sets the maximum time for the entire poweroff process, so it shouldn't be less than the `30min` default. |
+| `jobTimeoutSec` | str | `"10h"` | Maximum time for the update before killing it. This also sets the maximum time for the entire poweroff process, and is the effective backstop for the build itself. Lower it (e.g. `"2h"`) if 10h is too long a worst case. |
+| `minFreeBeforeBuildGiB` | int | `8` | Minimum free space (GiB) on `/nix/store` required to start the build. Below this, the build is skipped and retried on the next shutdown. |
+| `minFreeDiskSpaceGiB` | int | `2` | Minimum free space (GiB) tolerated while building. Below this, the build is killed. Keep it well below `minFreeBeforeBuildGiB`. |
 | `extraKeepAliveServices` | list of str | `[]` | Additional systemd units appended to the built-in `After=` list, they'll be kept running during the upgrade process on shutdown. Useful for VPN daemons or other services that must be up during the upgrade. Duplicates of built-in entries are silently ignored. This already includes entries like `sshd.service`, `thermald.service`, `network-online.target`, etc. |
 
 ## Impermanence
 
 If you use [impermanence](https://github.com/nix-community/impermanence) to
-wipe `/` on every boot, the flag file that tracks deferred updates accross reboots
-(`/etc/nixos-reboot-update.flag`) will be lost. You need to persist it
-yourself:
+wipe `/` on every boot, the flag file that tracks deferred updates across reboots
+(`/etc/nixos-reboot-update.flag`) — which also records the reason for the
+deferral: an empty flag means a reboot deferred it, `disk-space` means the last
+run ran out of space — will be lost. Without persistence, the "out of space"
+notice is lost after a reboot. You need to persist it yourself:
 
 ```nix
 environment.persistence."/persistent" = {
@@ -104,6 +115,12 @@ environment.persistence."/persistent" = {
   ];
 };
 ```
+
+The `/run/nixos-upgrade-notice` file is tmpfs, so it needs no persistence.
+
+## Boot notification
+
+After a reboot with a deferred upgrade, the module writes a notice to `/run/nixos-upgrade-notice` and installs an XDG autostart entry (`/etc/xdg/autostart/nixos-upgrade-notice.desktop`) that shows it when you log in. This works with GNOME, KDE, XFCE, Cinnamon, MATE and LXQt. Minimal window managers (i3, sway, Hyprland, etc.) only show it if something runs XDG autostart entries, for example `exec dex -a`. The notice is shown on every login of that boot.
 
 ## GitHub Actions
 
