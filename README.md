@@ -88,75 +88,19 @@ All options live under `system.autoUpgradeOnShutdown`.
 | `minimumBatteryToProceedWithoutAC` | int | `85` | Battery % threshold below which the update waits to see if AC is connected before proceeding. Ignored on desktops (no battery). |
 | `secondsToWaitBeforeCheckingAC` | int | `40` | Seconds to wait on low battery before re-checking the AC adapter state. |
 | `jobTimeoutSec` | str | `"10h"` | Maximum time for the update before killing it. This also sets the maximum time for the entire poweroff process, so it shouldn't be less than the `30min` default. |
-| `minimumFreeSpace` | int | `25` | Minimum free space (GiB) on the filesystem holding `/nix/store` before an update is allowed to run. |
-| `estimateSpaceFromCurrentSystem` | bool | `true` | Also require at least as much free space as the closure of the currently running system occupies. |
-| `cleanup.enable` | bool | `true` | Automatically free disk space when there is not enough for the update. |
-| `cleanup.generationsOlderThan` | int | `21` | First cleanup stage: delete generations older than this many days and garbage-collect. Set to `0` to skip. |
-| `cleanup.aggressive` | bool | `true` | Second cleanup stage: if still short on space, delete *all* old generations (keeps the current one). |
-| `notificationWaitSeconds` | int | `60` | How long the post-boot notification service waits for a graphical session before reporting a skipped/failed update. |
 | `extraKeepAliveServices` | list of str | `[]` | Additional systemd units appended to the built-in `After=` list, they'll be kept running during the upgrade process on shutdown. Useful for VPN daemons or other services that must be up during the upgrade. Duplicates of built-in entries are silently ignored. This already includes entries like `sshd.service`, `thermald.service`, `network-online.target`, etc. |
-
-## Disk space checks
-
-A full NixOS build needs a lot of room. If `/nix/store` runs out of space
-mid-build, the update fails at the worst possible moment — during shutdown.
-Before building, the module therefore checks the free space on the filesystem
-holding `/nix/store`:
-
-* The **floor** is `minimumFreeSpace` GiB (default `25`).
-* If `estimateSpaceFromCurrentSystem` is enabled (the default), the requirement
-  is raised to the size of the closure of the currently running system
-  (`nix path-info -S /run/current-system`). A new generation can be roughly as
-  large as the current one, so this is a conservative estimate of what a
-  rebuild may need.
-
-If the space is insufficient, old Nix data is deleted in two stages
-(`cleanup`):
-
-1. `nix-collect-garbage --delete-older-than <N>d` — deletes generations older
-   than `cleanup.generationsOlderThan` days (default `21`, like
-   `nh clean --keep-since 21d`) and garbage-collects unreachable paths.
-2. If that still isn't enough, `nix-collect-garbage -d` deletes **all** old
-   generations, keeping only the current one. This removes rollback points, so
-   it only runs when stage 1 was insufficient. Disable it with
-   `cleanup.aggressive = false`.
-
-The check runs twice:
-
-* When the timer fires (while the system is running), so cleanup happens in a
-  healthy system and you get a desktop notification if space is still short.
-* Right before the build at shutdown, in case something filled the disk in the
-  meantime.
-
-If space is still insufficient at shutdown, the update is **skipped**: the old
-generation is kept, the retry flag is written so the update is attempted again
-on the next shutdown, and the result is recorded in
-`/var/lib/nixos-upgrade-on-shutdown/last-result`. On the next boot a one-shot
-service reads that file and reports the outcome — on the console, in the
-journal, and as a desktop notification (waiting up to
-`notificationWaitSeconds` for a graphical session to appear). Failed builds are
-reported the same way.
-
-> **Tip:** setting `nix.settings.min-free = "20G"` (and optionally
-> `max-free`) is a good complement: it makes Nix itself garbage-collect during
-> builds instead of failing when the disk fills up.
 
 ## Impermanence
 
 If you use [impermanence](https://github.com/nix-community/impermanence) to
 wipe `/` on every boot, the flag file that tracks deferred updates accross reboots
 (`/etc/nixos-reboot-update.flag`) will be lost. You need to persist it
-yourself. The same applies to the result of the last shutdown-time update
-(`/var/lib/nixos-upgrade-on-shutdown`), which is used to notify you about
-skipped or failed updates after a reboot:
+yourself:
 
 ```nix
 environment.persistence."/persistent" = {
   files = [
     "/etc/nixos-reboot-update.flag"
-  ];
-  directories = [
-    "/var/lib/nixos-upgrade-on-shutdown"
   ];
 };
 ```
