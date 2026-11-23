@@ -10,7 +10,7 @@ It only supports flakes, and is expected to be used with a remote repository tha
 
 By default, it waits `40` seconds to see if the user will leave the computer/Laptop connected to AC. This is configurable. If you want it to only activate when connected to AC, you can set `minimumBatteryToProceedWithoutAC` to something higher than `100`.
 
-Before building, the module checks free space on `/nix/store`. If there is less than `minFreeBeforeBuildGiB`, the build is skipped and shutdown proceeds normally. While building, a watchdog polls free space and kills the build if it drops below `minFreeDiskSpaceGiB`, so a full disk cannot keep the machine from powering off. In both cases the upgrade is queued again, and on the next boot a notification tells you the last attempt failed because of insufficient disk space and that it will be retried on the next shutdown.
+The module does not check free space before starting the build; the build always starts. During the build the module passes `--option min-free` / `--option max-free` (10 GiB / 100 GiB) to Nix so the daemon runs its garbage collector mid-build when space gets low — this makes the module independent of whether your system config already sets those. If, despite GC, free space on `/nix/store` drops below `minFreeDiskSpaceGiB`, a watchdog kills the build so a full disk cannot keep the machine from powering off. The upgrade is then queued again, and on the next boot a notification tells you the last attempt failed because of insufficient disk space and that it will be retried on the next shutdown.
 
 > **Note:** Only the filesystem holding `/nix/store` is checked. If `/boot` or another mount fills up, the update fails through the normal error path.
 
@@ -95,8 +95,7 @@ All options live under `system.autoUpgradeOnShutdown`.
 | `minimumBatteryToProceedWithoutAC` | int | `85` | Battery % threshold below which the update waits to see if AC is connected before proceeding. Ignored on desktops (no battery). |
 | `secondsToWaitBeforeCheckingAC` | int | `40` | Seconds to wait on low battery before re-checking the AC adapter state. |
 | `jobTimeoutSec` | str | `"10h"` | Maximum time for the update before killing it. This also sets the maximum time for the entire poweroff process, and is the effective backstop for the build itself. Lower it (e.g. `"2h"`) if 10h is too long a worst case. |
-| `minFreeBeforeBuildGiB` | int | `8` | Minimum free space (GiB) on `/nix/store` required to start the build. Below this, the build is skipped and retried on the next shutdown. |
-| `minFreeDiskSpaceGiB` | int | `2` | Minimum free space (GiB) tolerated while building. Below this, the build is killed. Keep it well below `minFreeBeforeBuildGiB`. |
+| `minFreeDiskSpaceGiB` | int | `2` | Hard floor on free space (GiB) on `/nix/store` during the build. Below this, the watchdog kills the build. The build is allowed to start regardless of current free space; Nix's GC is expected to reclaim space during the build. |
 | `extraKeepAliveServices` | list of str | `[]` | Additional systemd units appended to the built-in `After=` list, they'll be kept running during the upgrade process on shutdown. Useful for VPN daemons or other services that must be up during the upgrade. Duplicates of built-in entries are silently ignored. This already includes entries like `sshd.service`, `thermald.service`, `network-online.target`, etc. |
 
 ## Impermanence

@@ -74,18 +74,24 @@ let
     set -e
     echo "Building system closure from ${cfg.flake}#nixosConfigurations.${cfg.host}..."
 
-    MIN_START_KB=${toString (cfg.minFreeBeforeBuildGiB * 1024 * 1024)}
     MIN_ABORT_KB=${toString (cfg.minFreeDiskSpaceGiB * 1024 * 1024)}
 
     free_kb() {
       df --output=avail -k /nix/store 2>/dev/null | tail -n 1 | tr -d ' '
     }
 
-    # Check free disk space on /nix/store before starting
+    # If free space is already below the abort floor, run a bounded GC first.
+    # The watchdog isn't running yet, so nothing kills this GC. --max-freed
+    # bounds its time, and generations are preserved (they are GC roots).
     FREE_KB=$(free_kb)
-    if [ -n "$FREE_KB" ] && [ "$FREE_KB" -lt "$MIN_START_KB" ]; then
-      echo "Insufficient disk space on /nix/store (< ${toString cfg.minFreeBeforeBuildGiB}GiB). Aborting upgrade." >&2
-      exit 10
+    if [ -n "$FREE_KB" ] && [ "$FREE_KB" -lt "$MIN_ABORT_KB" ]; then
+      echo "Free space below ${toString cfg.minFreeDiskSpaceGiB}GiB. Running bounded GC before build..." >&2
+      ${pkgs.nix}/bin/nix-store --gc --max-freed ${toString (20 * 1024 * 1024 * 1024)} || true
+      FREE_KB=$(free_kb)
+      if [ -n "$FREE_KB" ] && [ "$FREE_KB" -lt "$MIN_ABORT_KB" ]; then
+        echo "Still insufficient disk space after GC. Aborting upgrade." >&2
+        exit 10
+      fi
     fi
 
     # 1. Build and get the store path using nix-output-monitor / nix build
@@ -97,9 +103,17 @@ let
     # setsid: build gets its own process group so the whole tree can be killed.
     # A wedged build is bounded by TimeoutStopSec / poweroff JobTimeoutSec;
     # systemd kills the stop script and shutdown proceeds regardless.
+    #
+    # --option min-free / max-free: the module runs as root (trusted user), so
+    # these are forwarded to the daemon and make the module independent of the
+    # host's nix.conf. This lets Nix GC mid-build when space gets low. Values
+    # are derived from minFreeDiskSpaceGiB (+8 GiB to trigger, +18 GiB to free);
+    # safely redundant if your system config already sets them.
     ${pkgs.util-linux}/bin/setsid ${buildBin} build \
       "${cfg.flake}#nixosConfigurations.${cfg.host}.config.system.build.toplevel" \
       --print-out-paths --no-link --refresh \
+      --option min-free ${toString ((cfg.minFreeDiskSpaceGiB + 8) * 1024 * 1024 * 1024)} \
+      --option max-free ${toString ((cfg.minFreeDiskSpaceGiB + 18) * 1024 * 1024 * 1024)} \
       ${lib.escapeShellArgs cfg.flags} > "$OUT_FILE" &
     BUILD_PID=$!
 
@@ -135,7 +149,7 @@ let
       rm -f "$OUT_FILE"
       # Build may have died from ENOSPC between watchdog polls.
       FREE_KB=$(free_kb)
-      if [ -n "$FREE_KB" ] && [ "$FREE_KB" -lt "$MIN_START_KB" ]; then
+      if [ -n "$FREE_KB" ] && [ "$FREE_KB" -lt "$MIN_ABORT_KB" ]; then
         echo "Build failed (exit $BUILD_EXIT) and disk space is low. Treating as out of space." >&2
         exit 10
       fi
@@ -376,22 +390,6 @@ in
       description = "Whether to use nix-output-monitor (nom) for builds to provide a more detailed UI.";
     };
 
-    minFreeBeforeBuildGiB = lib.mkOption {
-      type = lib.types.int;
-      default = 8;
-      example = 20;
-      description = ''
-        Minimum free disk space (in GiB) required on `/nix/store` to start
-        the build. If less is available the build is skipped, shutdown
-        proceeds normally, and the user is notified on next boot that the
-        upgrade failed for lack of space and will be retried.
-
-        Should be comfortably larger than
-        {option}`system.autoUpgradeOnShutdown.minFreeDiskSpaceGiB`, since
-        a cold build can need many GiB.
-      '';
-    };
-
     minFreeDiskSpaceGiB = lib.mkOption {
       type = lib.types.int;
       default = 2;
@@ -401,6 +399,12 @@ in
         the build runs. If free space drops below this threshold, the build
         is killed to prevent hanging on a full disk during shutdown, and
         the upgrade is retried on the next shutdown.
+
+        If free space is already below this floor when the build is due to
+        start, a bounded GC runs first (see the disk-space paragraph in the
+        README). This option is also the hard floor below which the watchdog
+        aborts, and it drives the daemon's mid-build `min-free` / `max-free`
+        values passed on the build command.
       '';
     };
 
